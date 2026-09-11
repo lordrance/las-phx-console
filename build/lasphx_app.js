@@ -37,7 +37,7 @@
   const UNOPENED_GEO  = UNOPENED.geo;
   const UNOPENED_KEYS = Object.keys(UNOPENED_ZIPS);
   const SERVED_CITY   = UNOPENED.cities || {};
-  const UNOPENED_FILL = '#6B7590';
+  const UNOPENED_FILL = '#8894AD';
   const STATE_NAMES   = {AZ:'亚利桑那 Arizona', NV:'内华达 Nevada', UT:'犹他 Utah'};
 
   function routeColor(idx){
@@ -96,7 +96,7 @@
     view:'station', focusRoute:null,
     activeStations:new Set(), activeDsps:new Set(),
     focusStation:defaultFocus,
-    showUnopened:true
+    showUnopened:false          // opt-in via the 全部邮编 button
   };
 
   // the whole three-state extent, for the "全部三州" quick-jump
@@ -351,13 +351,14 @@
   }
 
   let unopenedLayer = null;
-  // Deliberately not too faint: ~40% of AZ/NV/UT land has no ZIP at all, and
-  // that bare basemap is a third, meaningful category. If the grey washes out,
-  // "unserved" and "no ZIP exists" become impossible to tell apart.
+  // Thin crisp outlines carry the shape; the fill only needs to be enough to
+  // separate "no station covers this" from the bare basemap, which is a third
+  // real category (~40% of AZ/NV/UT land has no ZIP at all). A heavier fill
+  // turns the whole region into a muddy wash over the terrain.
   const unopenedStyle = () => ({
-    color: darkBase ? 'rgba(233,238,249,.30)' : 'rgba(10,16,30,.50)',
-    weight: 0.7, fillColor: UNOPENED_FILL,
-    fillOpacity: darkBase ? 0.34 : 0.30
+    color: darkBase ? 'rgba(233,238,249,.34)' : 'rgba(52,64,92,.55)',
+    weight: 0.6, fillColor: UNOPENED_FILL,
+    fillOpacity: darkBase ? 0.30 : 0.16
   });
 
   function buildUnopenedLayer(){
@@ -785,15 +786,21 @@
     jump.value = '';
   });
 
-  // ---------- 未开邮编 toggle ----------
-  const unopenedCheck = document.getElementById('unopened-check');
-  document.getElementById('unopened-lbl').textContent = `(${UNOPENED_KEYS.length})`;
-  unopenedCheck.checked = state.showUnopened;
-  unopenedCheck.addEventListener('change', ()=>{
-    state.showUnopened = unopenedCheck.checked;
+  // ---------- 全部邮编 button ----------
+  // Off by default. The 890 unserved ZIPs are background for a question you
+  // only sometimes ask; left on, they grey over the 241 that carry the volume.
+  const allZipBtn = document.getElementById('allzip-btn');
+  document.getElementById('allzip-count').textContent = UNOPENED_KEYS.length;
+
+  function setShowUnopened(on){
+    state.showUnopened = on;
+    allZipBtn.classList.toggle('on', on);
+    allZipBtn.querySelector('.bigbtn-main').textContent =
+      on ? '全部邮编 · 点击隐藏' : '全部邮编';
     buildUnopenedLayer();
     renderLegend();
-  });
+  }
+  allZipBtn.addEventListener('click', ()=> setShowUnopened(!state.showUnopened));
 
   // ---------- Search: served ZIP, unserved ZIP, or city name ----------
   const searchInput = document.getElementById('zipsearch');
@@ -820,12 +827,7 @@
     const u = UNOPENED_ZIPS[zip];
     if(u){
       // no point flying to a polygon that is switched off
-      if(!state.showUnopened){
-        state.showUnopened = true;
-        unopenedCheck.checked = true;
-        buildUnopenedLayer();
-        renderLegend();
-      }
+      if(!state.showUnopened) setShowUnopened(true);
       flyAndOpen(u.lat, u.lon, unopenedPopupHtml(zip), animate);
       return true;
     }
@@ -907,11 +909,13 @@
     const noGeom = Object.values(ZIP_INDEX).filter(z=>!z.has_geom).map(z=>z.zip);
     const meta = UNOPENED.meta || {};
     document.getElementById('dataflag-text').innerHTML =
-      `<b>灰色的「未开邮编」是亚利桑那 / 内华达 / 犹他三州内没有任何站点覆盖的邮编</b>,共 `
-      + `<b>${UNOPENED_KEYS.length}</b> 个,可以搜索、点选。例如拉斯维加斯市中心那一片 —— `
+      `地图默认<b>只显示 8 个站点已开通的 ${Object.keys(ZIP_INDEX).length} 个邮编</b>。点侧边栏的`
+      + `<b>「全部邮编」</b>按钮,会叠加显示亚利桑那 / 内华达 / 犹他三州内没有任何站点覆盖的 `
+      + `<b>${UNOPENED_KEYS.length}</b> 个邮编(灰色)。<br><br>`
+      + `留空的地方就是未开通的邮编,不是数据缺失。例如拉斯维加斯市中心那一片 —— `
       + `89109(拉斯维加斯大道)、89158、89169(会展区)、89119(机场)、89191(内利斯空军基地)`
-      + ` —— 在报价表里没有,运单记录也是 0 条,是真实的服务范围边界,不是数据缺失。<br><br>`
-      + `<b>完全露出底图、没有色块的地方,是连邮编都没有分配的土地。</b>美国邮编是投递路线编号,`
+      + ` —— 在报价表里没有,运单记录也是 0 条,是真实的服务范围边界。搜索框直接输这些邮编也能定位。<br><br>`
+      + `<b>打开「全部邮编」后仍然露出底图、没有灰块的地方,是连邮编都没有分配的土地。</b>美国邮编是投递路线编号,`
       + `不是行政区划 —— 没有地址的地方就没有邮编。三州约 <b>40%</b> 的土地(约 32 万平方公里)属于这种情况,`
       + `集中在军事靶场、荒野保护区、BLM 荒地和大型保留地,内华达、犹他尤其多。没有地址就没有件可送,`
       + `所以这些空白不是漏掉的生意。<br><br>`
@@ -938,11 +942,7 @@
       if(state.view !== 'routes') state.activeStations = new Set([st]);
     }
     const uo = h.get('unopened');
-    if(uo === '0' || uo === '1'){
-      state.showUnopened = (uo === '1');
-      unopenedCheck.checked = state.showUnopened;
-      buildUnopenedLayer();
-    }
+    if(uo === '0' || uo === '1') setShowUnopened(uo === '1');
     refreshAll();
     const z = h.get('zip');
     if(z && gotoZip(z, false)){
@@ -956,7 +956,7 @@
   window.addEventListener('hashchange', applyHash);
 
   // ---------- Init ----------
-  buildUnopenedLayer();
+  setShowUnopened(state.showUnopened);
   refreshAll();
   if(location.hash) applyHash();
   animateCount(document.getElementById('stat-volume'),

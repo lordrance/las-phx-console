@@ -45,12 +45,11 @@
       </div>
 
       <div class="section" id="unopened-section">
-        <div class="section-title">未开邮编 <span id="unopened-lbl" class="mono" style="color:var(--muted-2)"></span></div>
-        <label class="togglerow">
-          <input type="checkbox" id="unopened-check" checked>
-          <span class="sw-box"></span>
-          <span>在地图上显示 AZ / NV / UT 全部未开通邮编</span>
-        </label>
+        <div class="section-title">邮编范围</div>
+        <button type="button" class="bigbtn" id="allzip-btn">
+          <span class="bigbtn-main">全部邮编</span>
+          <span class="bigbtn-sub">叠加 AZ / NV / UT 未开通的 <span id="allzip-count" class="mono"></span> 个邮编</span>
+        </button>
       </div>
 
       <div class="section" id="station-filter-section">

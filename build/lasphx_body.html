@@ -1,0 +1,93 @@
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="eyebrow"><span class="dot"></span>LIVE NETWORK · LAS VEGAS / PHOENIX REGION</div>
+      <h1>拉斯维加斯 / 凤凰城片区站点数据看板</h1>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;color:var(--muted);margin:1px 0 4px;">LAS / PHX Regional Station Data Dashboard</div>
+      <p>覆盖率 · 价格 · 单量 — 按邮编呈现</p>
+    </div>
+    <div class="stat-row">
+      <div class="stat-cell"><div class="v mono" id="stat-volume">0</div><div class="l">Daily Volume</div></div>
+      <div class="stat-cell"><div class="v mono" id="stat-zips">0</div><div class="l">ZIPs Covered</div></div>
+      <div class="stat-cell"><div class="v mono" id="stat-stations">0</div><div class="l">Stations</div></div>
+    </div>
+
+    <div id="sidebar-scroll">
+      <div class="section">
+        <div class="section-title">按以下维度着色</div>
+        <div class="viewtabs" id="viewtabs">
+          <div class="viewtab active" data-view="station">站点</div>
+          <div class="viewtab" data-view="dsp">DSP</div>
+          <div class="viewtab" data-view="routes">线路</div>
+          <div class="viewtab" data-view="price">价格</div>
+          <div class="viewtab" data-view="volume">单量</div>
+          <div class="viewtab" data-view="grade">难易度</div>
+        </div>
+      </div>
+
+      <div class="section" id="route-focus-section" style="display:none;">
+        <div class="section-title">选择站点查看线路</div>
+        <div class="chiplist" id="route-focus-chips"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">快速跳转</div>
+        <select id="station-jump" class="jumpsel"></select>
+      </div>
+
+      <div class="section">
+        <div class="section-title">搜索邮编</div>
+        <div class="searchbox">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B89" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="zipsearch" type="text" placeholder="例如 85043" maxlength="5" inputmode="numeric">
+        </div>
+      </div>
+
+      <div class="section" id="station-filter-section">
+        <div class="section-title">站点 <span id="stcount-lbl" class="mono" style="color:var(--muted-2)"></span></div>
+        <div class="chiplist" id="station-chips"></div>
+        <div class="chiprow-actions"><span class="link-btn" data-act="all-st">全选</span><span class="link-btn" data-act="none-st">清除</span></div>
+      </div>
+
+      <div class="section" id="dsp-filter-section">
+        <div class="section-title">DSP <span id="dspcount-lbl" class="mono" style="color:var(--muted-2)"></span></div>
+        <div class="chiplist" id="dsp-chips"></div>
+        <div class="chiprow-actions"><span class="link-btn" data-act="all-dsp">全选</span><span class="link-btn" data-act="none-dsp">清除</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title" id="ranklist-title">站点 · 按单量</div>
+        <div class="ranklist" id="ranklist"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">价格表 / Price sheet</div>
+        <div class="ps-status" id="pricesheet-status">使用内置基准价格 — 未找到调价表。</div>
+      </div>
+
+      <div class="callout" id="dataflag">
+        <b>数据说明 —</b> <span id="dataflag-text"></span>
+      </div>
+
+      <div class="footer-note">
+        数据源:GOFO WE DSP 对应关系(财务版报价)+ 站点运单明细。价格为<b>首票价格 0-1lb</b>。
+        DSP 代号已剥离站点前缀(<span class="mono">PHX-ECS → ECS</span>),同一家 DSP 跨站运营时合并统计。
+        邮编边界:US Census 2020 ZCTA5,简化至约 100 米精度。
+      </div>
+    </div>
+  </aside>
+
+  <main id="mapwrap">
+    <div id="map"></div>
+    <div id="topbar">
+      <span id="viewlabel">当前视图: <b>站点</b></span>
+      <span id="filterlabel"></span>
+      <span id="resetbtn">重置视野</span>
+    </div>
+    <div id="legend"></div>
+    <div id="route-panel" style="display:none;">
+      <div class="rp-title">线路 <span id="rp-station-label" class="mono"></span></div>
+      <div id="rp-list"></div>
+    </div>
+  </main>
+</div>

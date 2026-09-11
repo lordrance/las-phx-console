@@ -1,0 +1,66 @@
+  /* ---- LAS/PHX additions on top of the shared design system ---- */
+
+  /* 6 view tabs instead of 5: two rows of three */
+  .viewtabs{grid-template-columns:repeat(3,1fr);}
+
+  /* station quick-jump: the region spans 3 states, panning is impractical */
+  .jumpsel{
+    width:100%; background:var(--panel-alt); color:var(--ink);
+    border:1px solid var(--panel-hair); border-radius:8px;
+    padding:9px 10px; font-size:12px; cursor:pointer; outline:none;
+    font-family:'IBM Plex Mono',monospace;
+    appearance:none; -webkit-appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,#5D6B89 50%),
+                     linear-gradient(135deg,#5D6B89 50%,transparent 50%);
+    background-position:calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+  }
+  .jumpsel:hover{border-color:#37465f;}
+  .jumpsel:focus{border-color:var(--teal);}
+  .jumpsel option{background:var(--panel); color:var(--ink);}
+
+  /* difficulty legend footnote */
+  #legend .lg-foot{
+    font-size:9.5px; color:var(--muted-2); line-height:1.5;
+    border-top:1px solid var(--panel-hair); margin-top:7px; padding-top:6px;
+  }
+
+  .ps-status{
+    font-size:11.5px; color:var(--muted); line-height:1.5; margin-bottom:9px;
+    border-left:3px solid var(--muted-2); padding-left:9px;
+  }
+  .ps-status.applied{ border-left-color:var(--teal); color:var(--ink); }
+  .ps-status.preview{ border-left-color:var(--amber); color:var(--ink); }
+
+  .footer-note b{color:var(--muted);}
+  .footer-note .mono{font-family:'IBM Plex Mono',monospace; color:var(--teal);}
+
+  /* colourful street map is the default; keep the pre-load backdrop neutral */
+  .leaflet-container{background:#e8e4dc;}
+
+  /* basemap switcher, restyled for the dark console */
+  .leaflet-control-layers{
+    background:rgba(16,24,40,.94) !important; backdrop-filter:blur(6px);
+    border:1px solid var(--panel-hair) !important; border-radius:9px !important;
+    box-shadow:0 6px 18px rgba(0,0,0,.35) !important; color:var(--ink);
+  }
+  .leaflet-control-layers-toggle{
+    background-image:none !important; width:32px !important; height:32px !important;
+    position:relative;
+  }
+  .leaflet-control-layers-toggle::after{
+    content:'底图'; position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink);
+  }
+  .leaflet-control-layers-expanded{padding:9px 11px !important;}
+  .leaflet-control-layers-list label{
+    display:flex; align-items:center; gap:6px;
+    font-size:11.5px; margin:3px 0; cursor:pointer; color:var(--ink);
+  }
+  .leaflet-control-layers-list input{accent-color:var(--teal); margin:0;}
+  .leaflet-control-attribution{
+    background:rgba(16,24,40,.8) !important; color:var(--muted-2) !important;
+    font-size:9.5px !important;
+  }
+  .leaflet-control-attribution a{color:var(--muted) !important;}

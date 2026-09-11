@@ -694,7 +694,10 @@
   (function(){
     const noGeom = Object.values(ZIP_INDEX).filter(z=>!z.has_geom).map(z=>z.zip);
     document.getElementById('dataflag-text').innerHTML =
-      `邮编 <b>${noGeom.join(', ')}</b> 无 ZCTA 行政边界(PO Box 专用邮编),地图上不绘制色块,`
+      `<b>地图上的留空区域是服务范围外的邮编,不是数据缺失。</b>例如拉斯维加斯中部的空缺是 `
+      + `89109(拉斯维加斯大道)、89158、89169(会展区)、89119(机场)、89191(内利斯空军基地)`
+      + ` —— 这些邮编在报价表里没有,运单记录也是 0 条。<br><br>`
+      + `邮编 <b>${noGeom.join(', ')}</b> 无 ZCTA 行政边界(PO Box 专用邮编),地图上不绘制色块,`
       + `位置取所属站点服务区的单量加权中心。难易度评级仅 LAS01、TUC01 两站有数据,`
       + `覆盖 <b>${GRADED_ZIPS}/${Object.keys(ZIP_INDEX).length}</b> 个邮编。`;
   })();

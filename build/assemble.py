@@ -106,8 +106,10 @@ def main():
     app = open(os.path.join(HERE, "lasphx_app.js"), encoding="utf-8").read()
     mapdata = open(os.path.join(HERE, "mapdata.json"), encoding="utf-8").read()
     zipgeo = open(os.path.join(HERE, "zipgeo.json"), encoding="utf-8").read()
+    unopened = open(os.path.join(HERE, "unopened.json"), encoding="utf-8").read()
 
-    for blob, name in ((mapdata, "mapdata"), (zipgeo, "zipgeo")):
+    for blob, name in ((mapdata, "mapdata"), (zipgeo, "zipgeo"),
+                       (unopened, "unopened")):
         if "</script" in blob:
             raise SystemExit(f"{name} 含有 </script,无法安全内联")
 
@@ -133,6 +135,8 @@ def main():
 <!-- ============================================================== -->
 <script id="mapdata" type="application/json">{mapdata}</script>
 <script id="zipgeo" type="application/json">{zipgeo}</script>
+<!-- 未开邮编: AZ/NV/UT 三州内未覆盖的邮编 — 边界 + 城市名。生成脚本 build/fetch_unopened.py -->
+<script id="unopened" type="application/json">{unopened}</script>
 <script type="text/plain" id="mapmain">
 {app}
 </script>
@@ -153,6 +157,7 @@ def main():
     print(f"   总大小 {os.path.getsize(out)/1024:.0f} KB")
     print(f"     CSS  {(len(base_css)+len(extra_css))/1024:.0f} KB")
     print(f"     数据 {len(mapdata)/1024:.0f} KB + 边界 {len(zipgeo)/1024:.0f} KB")
+    print(f"     未开邮编 {len(unopened)/1024/1024:.2f} MB")
     print(f"     应用 {len(app)/1024:.0f} KB")
     print(f"写出 {csv_out}")
 

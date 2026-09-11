@@ -36,11 +36,21 @@
       </div>
 
       <div class="section">
-        <div class="section-title">搜索邮编</div>
+        <div class="section-title">搜索邮编 / 城市</div>
         <div class="searchbox">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B89" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="zipsearch" type="text" placeholder="例如 85043" maxlength="5" inputmode="numeric">
+          <input id="zipsearch" type="text" placeholder="邮编 85043,或城市 Sedona" maxlength="28" autocomplete="off">
         </div>
+        <div class="search-hint" id="search-hint"></div>
+      </div>
+
+      <div class="section" id="unopened-section">
+        <div class="section-title">未开邮编 <span id="unopened-lbl" class="mono" style="color:var(--muted-2)"></span></div>
+        <label class="togglerow">
+          <input type="checkbox" id="unopened-check" checked>
+          <span class="sw-box"></span>
+          <span>在地图上显示 AZ / NV / UT 全部未开通邮编</span>
+        </label>
       </div>
 
       <div class="section" id="station-filter-section">
@@ -73,6 +83,7 @@
         数据源:GOFO WE DSP 对应关系(财务版报价)+ 站点运单明细。价格为<b>首票价格 0-1lb</b>。
         DSP 代号已剥离站点前缀(<span class="mono">PHX-ECS → ECS</span>),同一家 DSP 跨站运营时合并统计。
         邮编边界:US Census 2020 ZCTA5,简化至约 100 米精度。
+        未开邮编城市名来自 GeoNames 美国邮编库。
       </div>
     </div>
   </aside>

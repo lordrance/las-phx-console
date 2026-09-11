@@ -3,6 +3,7 @@
 
   const MAP_DATA = JSON.parse(document.getElementById('mapdata').textContent);
   const ZIP_GEO  = JSON.parse(document.getElementById('zipgeo').textContent);
+  const UNOPENED = JSON.parse(document.getElementById('unopened').textContent);
 
   const STATIONS    = MAP_DATA.stations;
   const DSP_SUMMARY = MAP_DATA.dsp_summary;
@@ -26,6 +27,18 @@
   const GRADE_COLORS = {A:'#E0553F', B:'#F2A93B', C:'#7FC96B', D:'#2E9E6B'};
   const GRADE_LABELS = {A:'A 级 · 难', B:'B 级 · 中', C:'C 级 · 易', D:'D 级 · 极易'};
   const NO_GRADE_FILL = '#33405C';
+
+  // 未开邮编: every ZIP in AZ / NV / UT that no station covers. Built from two
+  // sources because neither is complete on its own -- Census ZCTA5 supplies the
+  // polygons, GeoNames supplies city names plus the PO-Box-only ZIPs that have
+  // no polygon at all. Deliberately one flat grey category: the point is to show
+  // what is *outside* the network, not to sub-divide it.
+  const UNOPENED_ZIPS = UNOPENED.zips;
+  const UNOPENED_GEO  = UNOPENED.geo;
+  const UNOPENED_KEYS = Object.keys(UNOPENED_ZIPS);
+  const SERVED_CITY   = UNOPENED.cities || {};
+  const UNOPENED_FILL = '#6B7590';
+  const STATE_NAMES   = {AZ:'亚利桑那 Arizona', NV:'内华达 Nevada', UT:'犹他 Utah'};
 
   function routeColor(idx){
     const hue = (idx * 137.508) % 360;           // golden-angle hue rotation
@@ -82,8 +95,20 @@
   const state = {
     view:'station', focusRoute:null,
     activeStations:new Set(), activeDsps:new Set(),
-    focusStation:defaultFocus
+    focusStation:defaultFocus,
+    showUnopened:true
   };
+
+  // the whole three-state extent, for the "全部三州" quick-jump
+  const ALL_BOUNDS = (()=>{
+    const pts = [];
+    Object.values(ZIP_INDEX).forEach(z=>{ if(z.lat&&z.lon) pts.push([z.lat,z.lon]); });
+    UNOPENED_KEYS.forEach(z=>{
+      const u = UNOPENED_ZIPS[z];
+      if(u.lat&&u.lon) pts.push([u.lat,u.lon]);
+    });
+    return L.latLngBounds(pts);
+  })();
 
   // ---------- Map ----------
   const map = L.map('map', {zoomControl:false, minZoom:5, maxZoom:13});
@@ -109,6 +134,13 @@
   map.createPane('labels');
   map.getPane('labels').style.zIndex = 450;
   map.getPane('labels').style.pointerEvents = 'none';
+
+  // 未开邮编 get their own pane *below* the served zips (overlayPane, 400) so a
+  // served zip always wins where the two touch, and their own canvas renderer --
+  // there are ~650 of them and SVG paths that many make panning stutter.
+  map.createPane('unopened');
+  map.getPane('unopened').style.zIndex = 380;
+  const unopenedRenderer = L.canvas({pane:'unopened', padding:0.4});
 
   const BASEMAPS = {
     '彩色街道图': {
@@ -146,6 +178,7 @@
     if(!hit) return;
     darkBase = hit.dark;
     buildZipLayer();
+    buildUnopenedLayer();
   });
 
   // zip outlines need to invert with the basemap or they vanish
@@ -243,7 +276,7 @@
       `<div class="pop-note">⬤ 该邮编无 ZCTA 边界数据(多为 PO Box 专用邮编),位置取所属站点服务区中心</div>`;
     return `
       <div class="pop-title"><span style="color:${STATION_COLORS[rec.station]}">●</span> ZIP ${rec.zip}</div>
-      <div class="pop-sub">${rec.station} · DSP ${rec.dominantDsp||'—'} · 车队 ${rec.fleet||'—'} · 线路 ${rec.dominantRoute||'—'}</div>
+      <div class="pop-sub">${SERVED_CITY[rec.zip] ? SERVED_CITY[rec.zip]+' · ' : ''}${rec.station} · DSP ${rec.dominantDsp||'—'} · 车队 ${rec.fleet||'—'} · 线路 ${rec.dominantRoute||'—'}</div>
       <div class="pop-grid">
         <div class="pop-stat"><div class="v">${fmt(rec.volume)}</div><div class="l">Daily Volume</div></div>
         <div class="pop-stat"><div class="v">${rec.price>0?fmtPrice(rec.price):'—'}</div><div class="l">首票价格</div></div>
@@ -276,6 +309,77 @@
         layer.on('click', function(e){
           if(!isVisible(rec)) return;
           L.popup({maxWidth:290}).setLatLng(e.latlng).setContent(zipPopupHtml(rec)).openOn(map);
+        });
+      }
+    }).addTo(map);
+  }
+
+  // ---------- 未开邮编 layer ----------
+  function haversineMiles(lat1, lon1, lat2, lon2){
+    const R = 3958.8, r = Math.PI/180;
+    const dLat = (lat2-lat1)*r, dLon = (lon2-lon1)*r;
+    const h = Math.sin(dLat/2)**2
+            + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
+    return 2*R*Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  // straight-line distance only -- it answers "how far outside the network is
+  // this?" well enough, and we have no drive-time data to do better
+  function nearestStation(lat, lon){
+    let best = null, bestD = Infinity;
+    STATION_KEYS.forEach(s=>{
+      const i = STATIONS[s];
+      if(!i.lat || !i.lon) return;
+      const d = haversineMiles(lat, lon, i.lat, i.lon);
+      if(d < bestD){ bestD = d; best = s; }
+    });
+    return best ? {station:best, miles:bestD} : null;
+  }
+
+  function unopenedPopupHtml(zip){
+    const u = UNOPENED_ZIPS[zip];
+    if(!u) return '';
+    const near = nearestStation(u.lat, u.lon);
+    return `
+      <div class="pop-title"><span style="color:${UNOPENED_FILL}">●</span> ZIP ${zip}</div>
+      <div class="pop-sub">${u.c || '未知城市'} · ${STATE_NAMES[u.s] || u.s}</div>
+      <div class="pop-unopened">未开通 / Not Served
+        <span>不在任何站点的派送范围内 — 无线路、无单量、无报价</span></div>
+      ${near ? `<div class="pop-addr">最近站点 <b style="color:${STATION_COLORS[near.station]}">${near.station}</b> · 直线距离约 ${Math.round(near.miles)} 英里 / ${Math.round(near.miles*1.609)} 公里</div>` : ''}
+      ${u.ng ? `<div class="pop-note">⬤ 该邮编无 ZCTA 行政边界(多为 PO Box 专用邮编),地图上不绘制色块,位置取邮政投递中心点</div>` : ''}
+    `;
+  }
+
+  let unopenedLayer = null;
+  // Deliberately not too faint: ~40% of AZ/NV/UT land has no ZIP at all, and
+  // that bare basemap is a third, meaningful category. If the grey washes out,
+  // "unserved" and "no ZIP exists" become impossible to tell apart.
+  const unopenedStyle = () => ({
+    color: darkBase ? 'rgba(233,238,249,.30)' : 'rgba(10,16,30,.50)',
+    weight: 0.7, fillColor: UNOPENED_FILL,
+    fillOpacity: darkBase ? 0.34 : 0.30
+  });
+
+  function buildUnopenedLayer(){
+    if(unopenedLayer){ map.removeLayer(unopenedLayer); unopenedLayer = null; }
+    if(!state.showUnopened) return;
+    unopenedLayer = L.geoJSON(UNOPENED_GEO, {
+      pane:'unopened', renderer:unopenedRenderer, style:unopenedStyle,
+      onEachFeature:(feature, layer)=>{
+        const zip = feature.properties.zip;
+        const u = UNOPENED_ZIPS[zip];
+        if(!u) return;
+        layer.on('mouseover', function(e){
+          layer.setStyle({weight:1.6, color:'#ffffff', fillOpacity:0.48});
+          layer.bindTooltip(
+            `<b>${zip}</b> · ${u.c||'—'} ${u.s} · 未开通`,
+            {className:'zip-tooltip', sticky:true}
+          ).openTooltip(e.latlng);
+        });
+        layer.on('mouseout', ()=>{ if(unopenedLayer) unopenedLayer.resetStyle(layer); });
+        layer.on('click', e=>{
+          L.popup({maxWidth:290}).setLatLng(e.latlng)
+            .setContent(unopenedPopupHtml(zip)).openOn(map);
         });
       }
     }).addTo(map);
@@ -365,28 +469,36 @@
   }
 
   // ---------- Legend ----------
+  // the 未开邮编 swatch rides along in every view, since the grey polygons are
+  // on screen in every view
+  function unopenedLegendRow(){
+    if(!state.showUnopened) return '';
+    return `<div class="lg-cat" style="opacity:.85"><span class="sw" style="background:${UNOPENED_FILL}"></span>未开邮编 · ${UNOPENED_KEYS.length}个</div>`
+      + `<div class="lg-cat" style="opacity:.7"><span class="sw" style="background:transparent;border:1px dashed #8894AD"></span>无邮编区域 · 露出底图</div>`
+      + `<div class="lg-foot">三州约 40% 土地没有分配邮编 — 军事靶场、荒野、无人区</div>`;
+  }
+
   function renderLegend(){
     const el = document.getElementById('legend');
-    if(state.view==='routes'){ el.style.display='none'; return; }
-    el.style.display = '';
+    let html = '';
     if(state.view==='station'){
-      el.innerHTML = `<div class="lg-title">站点 / Station</div>` +
+      html = `<div class="lg-title">站点 / Station</div>` +
         STATION_KEYS.filter(s=>stationOn(s)).map(s=>
           `<div class="lg-cat"><span class="sw" style="background:${STATION_COLORS[s]}"></span>${s} · ${fmt(STATIONS[s].total_volume)}/d</div>`).join('');
     } else if(state.view==='dsp'){
-      el.innerHTML = `<div class="lg-title">每个邮编的 DSP</div>` +
+      html = `<div class="lg-title">每个邮编的 DSP</div>` +
         DSP_KEYS.filter(d=>dspOn(d)).map(d=>
           `<div class="lg-cat"><span class="sw" style="background:${DSP_COLORS[d]}"></span>${d} · ${fmt(DSP_SUMMARY[d].volume)}/d</div>`).join('');
     } else if(state.view==='volume'){
-      el.innerHTML = `<div class="lg-title">日均单量 / 邮编</div>
+      html = `<div class="lg-title">日均单量 / 邮编</div>
         <div class="lg-grad" style="background:linear-gradient(90deg, ${VOL_RAMP.join(',')})"></div>
         <div class="lg-scale-labels"><span>${fmt(VOL_MIN)}</span><span>${fmt(VOL_MAX)}</span></div>`;
     } else if(state.view==='price'){
-      el.innerHTML = `<div class="lg-title">首票价格 / 邮编</div>
+      html = `<div class="lg-title">首票价格 / 邮编</div>
         <div class="lg-grad" style="background:linear-gradient(90deg, ${PRICE_RAMP.join(',')})"></div>
         <div class="lg-scale-labels"><span>${fmtPrice(PRICE_MIN)}</span><span>${fmtPrice(PRICE_MAX)}</span></div>`;
     } else if(state.view==='grade'){
-      el.innerHTML = `<div class="lg-title">邮编难易度</div>` +
+      html = `<div class="lg-title">邮编难易度</div>` +
         GRADE_KEYS.filter(g=>GRADE_STATS[g].zips>0).map(g=>{
           const s = GRADE_STATS[g];
           const pph = s.pphN ? ` · PPH ${(s.pphSum/s.pphN).toFixed(1)}` : '';
@@ -394,7 +506,12 @@
         }).join('') +
         `<div class="lg-cat" style="opacity:.6"><span class="sw" style="background:${NO_GRADE_FILL}"></span>未评级 · ${GRADE_STATS['?'].zips}个</div>
          <div class="lg-foot">仅 LAS01 / TUC01 的 ${GRADED_ZIPS} 个邮编有评级</div>`;
+    } else if(state.view==='routes' && state.showUnopened){
+      html = `<div class="lg-title">图例</div>`;
     }
+    html += unopenedLegendRow();
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
   }
 
   // ---------- Route panel ----------
@@ -659,26 +776,121 @@
   // ---------- Station quick-jump (the region is too spread out to pan) ----------
   const jump = document.getElementById('station-jump');
   jump.innerHTML = `<option value="">跳转到站点…</option>` +
-    STATION_KEYS.map(s=>`<option value="${s}">${s} · ${fmt(STATIONS[s].total_volume)}/d · ${STATIONS[s].zip_count} 邮编</option>`).join('');
+    STATION_KEYS.map(s=>`<option value="${s}">${s} · ${fmt(STATIONS[s].total_volume)}/d · ${STATIONS[s].zip_count} 邮编</option>`).join('')
+    + `<option value="__all">全部三州 · AZ / NV / UT</option>`;
   jump.addEventListener('change', ()=>{
     if(!jump.value) return;
-    highlightStation(jump.value);
+    if(jump.value === '__all') map.flyToBounds(ALL_BOUNDS, {padding:[30,30], duration:0.8});
+    else highlightStation(jump.value);
     jump.value = '';
   });
 
-  // ---------- Search ----------
-  document.getElementById('zipsearch').addEventListener('keydown', (e)=>{
-    if(e.key !== 'Enter') return;
-    const rec = ZIP_INDEX[e.target.value.trim()];
+  // ---------- 未开邮编 toggle ----------
+  const unopenedCheck = document.getElementById('unopened-check');
+  document.getElementById('unopened-lbl').textContent = `(${UNOPENED_KEYS.length})`;
+  unopenedCheck.checked = state.showUnopened;
+  unopenedCheck.addEventListener('change', ()=>{
+    state.showUnopened = unopenedCheck.checked;
+    buildUnopenedLayer();
+    renderLegend();
+  });
+
+  // ---------- Search: served ZIP, unserved ZIP, or city name ----------
+  const searchInput = document.getElementById('zipsearch');
+  const searchHint  = document.getElementById('search-hint');
+
+  function setHint(cls, html){
+    searchHint.className = 'search-hint' + (cls ? ' ' + cls : '');
+    searchHint.innerHTML = html || '';
+  }
+
+  function flyAndOpen(lat, lon, content, animate){
+    const open = ()=> L.popup({maxWidth:290}).setLatLng([lat, lon])
+                       .setContent(content).openOn(map);
+    if(animate === false){ map.setView([lat, lon], 11); open(); }
+    else { map.flyTo([lat, lon], 11, {duration:0.7}); setTimeout(open, 750); }
+  }
+
+  function gotoZip(zip, animate){
+    const rec = ZIP_INDEX[zip];
     if(rec && rec.lat && rec.lon){
-      map.flyTo([rec.lat, rec.lon], 11, {duration:0.7});
-      setTimeout(()=>{
-        L.popup({maxWidth:290}).setLatLng([rec.lat,rec.lon]).setContent(zipPopupHtml(rec)).openOn(map);
-      }, 750);
-    } else {
-      e.target.style.borderColor = '#FF6B6B';
-      setTimeout(()=>{ e.target.parentElement.style.borderColor=''; }, 900);
+      flyAndOpen(rec.lat, rec.lon, zipPopupHtml(rec), animate);
+      return true;
     }
+    const u = UNOPENED_ZIPS[zip];
+    if(u){
+      // no point flying to a polygon that is switched off
+      if(!state.showUnopened){
+        state.showUnopened = true;
+        unopenedCheck.checked = true;
+        buildUnopenedLayer();
+        renderLegend();
+      }
+      flyAndOpen(u.lat, u.lon, unopenedPopupHtml(zip), animate);
+      return true;
+    }
+    return false;
+  }
+
+  // prefix hits rank above mid-word hits, served above unserved
+  function cityMatches(q){
+    const needle = q.toLowerCase();
+    const out = [];
+    const push = (zip, city, served)=>{
+      const i = city.toLowerCase().indexOf(needle);
+      if(i >= 0) out.push({zip, city, served, rank:(i===0 ? 0 : 1)});
+    };
+    Object.keys(ZIP_INDEX).forEach(z=>{ if(SERVED_CITY[z]) push(z, SERVED_CITY[z], true); });
+    UNOPENED_KEYS.forEach(z=>{ if(UNOPENED_ZIPS[z].c) push(z, UNOPENED_ZIPS[z].c, false); });
+    out.sort((a,b)=> a.rank-b.rank || (b.served-a.served) || a.zip.localeCompare(b.zip));
+    return out;
+  }
+
+  function runSearch(){
+    const q = searchInput.value.trim();
+    if(!q){ setHint('', ''); return; }
+
+    if(/^\d{5}$/.test(q)){
+      const rec = ZIP_INDEX[q];
+      if(rec){
+        gotoZip(q);
+        setHint('', `<b>${q}</b> · ${SERVED_CITY[q]||'—'} · 已开通 · ${rec.station} · ${fmt(rec.volume)}/天`);
+        return;
+      }
+      const u = UNOPENED_ZIPS[q];
+      if(u){
+        gotoZip(q);
+        const near = nearestStation(u.lat, u.lon);
+        setHint('', `<b>${q}</b> · ${u.c||'—'} ${u.s} · <b>未开通</b>`
+          + (near ? ` · 最近站点 ${near.station} 约 ${Math.round(near.miles)} 英里` : ''));
+        return;
+      }
+      setHint('err', `<b>${q}</b> 不是 AZ / NV / UT 的邮编 — 本看板只收录这三个州。`);
+      return;
+    }
+
+    if(q.length < 2){ setHint('err', '请输入 5 位邮编,或至少 2 个字母的城市名。'); return; }
+    const hits = cityMatches(q);
+    if(!hits.length){ setHint('err', `AZ / NV / UT 范围内没有找到城市 <b>${q}</b>。`); return; }
+
+    const shown = hits.slice(0, 12);
+    const nOpen = hits.filter(h=>h.served).length;
+    setHint('', `<b>${hits.length}</b> 个邮编匹配「${q}」 — 已开通 ${nOpen} 个,未开通 ${hits.length-nOpen} 个`
+      + (hits.length > shown.length ? `,下列前 ${shown.length} 个` : '')
+      + '<br>' + shown.map(h=>
+          `<span class="hit" data-zip="${h.zip}"${h.served?'':' style="opacity:.7"'}>${h.zip}${h.served?'':' 未开'}</span>`
+        ).join(''));
+
+    const pts = hits.map(h=> h.served
+      ? [ZIP_INDEX[h.zip].lat, ZIP_INDEX[h.zip].lon]
+      : [UNOPENED_ZIPS[h.zip].lat, UNOPENED_ZIPS[h.zip].lon]).filter(p=>p[0]&&p[1]);
+    if(pts.length) map.flyToBounds(pts, {padding:[70,70], maxZoom:11, duration:0.7});
+  }
+
+  searchInput.addEventListener('keydown', e=>{ if(e.key === 'Enter') runSearch(); });
+  searchHint.addEventListener('click', e=>{
+    const h = e.target.closest('.hit');
+    if(h) gotoZip(h.getAttribute('data-zip'));
   });
 
   // ---------- Reset ----------
@@ -693,13 +905,21 @@
   // ---------- Data note ----------
   (function(){
     const noGeom = Object.values(ZIP_INDEX).filter(z=>!z.has_geom).map(z=>z.zip);
+    const meta = UNOPENED.meta || {};
     document.getElementById('dataflag-text').innerHTML =
-      `<b>地图上的留空区域是服务范围外的邮编,不是数据缺失。</b>例如拉斯维加斯中部的空缺是 `
+      `<b>灰色的「未开邮编」是亚利桑那 / 内华达 / 犹他三州内没有任何站点覆盖的邮编</b>,共 `
+      + `<b>${UNOPENED_KEYS.length}</b> 个,可以搜索、点选。例如拉斯维加斯市中心那一片 —— `
       + `89109(拉斯维加斯大道)、89158、89169(会展区)、89119(机场)、89191(内利斯空军基地)`
-      + ` —— 这些邮编在报价表里没有,运单记录也是 0 条。<br><br>`
-      + `邮编 <b>${noGeom.join(', ')}</b> 无 ZCTA 行政边界(PO Box 专用邮编),地图上不绘制色块,`
-      + `位置取所属站点服务区的单量加权中心。难易度评级仅 LAS01、TUC01 两站有数据,`
-      + `覆盖 <b>${GRADED_ZIPS}/${Object.keys(ZIP_INDEX).length}</b> 个邮编。`;
+      + ` —— 在报价表里没有,运单记录也是 0 条,是真实的服务范围边界,不是数据缺失。<br><br>`
+      + `<b>完全露出底图、没有色块的地方,是连邮编都没有分配的土地。</b>美国邮编是投递路线编号,`
+      + `不是行政区划 —— 没有地址的地方就没有邮编。三州约 <b>40%</b> 的土地(约 32 万平方公里)属于这种情况,`
+      + `集中在军事靶场、荒野保护区、BLM 荒地和大型保留地,内华达、犹他尤其多。没有地址就没有件可送,`
+      + `所以这些空白不是漏掉的生意。<br><br>`
+      + `未开邮编里有 <b>${meta.no_geom || 0}</b> 个是 PO Box 专用邮编,没有 ZCTA 行政边界,`
+      + `地图上不画色块,但搜索得到,位置取邮政投递中心点。已开通邮编中的 `
+      + `<b>${noGeom.join(', ')}</b> 同样无边界,位置取所属站点服务区的单量加权中心。<br><br>`
+      + `难易度评级仅 LAS01、TUC01 两站有数据,覆盖 `
+      + `<b>${GRADED_ZIPS}/${Object.keys(ZIP_INDEX).length}</b> 个邮编。`;
   })();
 
   // ---------- Deep link: #view=grade&station=PHX01&zip=85043 ----------
@@ -717,12 +937,16 @@
       state.focusStation = st;
       if(state.view !== 'routes') state.activeStations = new Set([st]);
     }
+    const uo = h.get('unopened');
+    if(uo === '0' || uo === '1'){
+      state.showUnopened = (uo === '1');
+      unopenedCheck.checked = state.showUnopened;
+      buildUnopenedLayer();
+    }
     refreshAll();
     const z = h.get('zip');
-    if(z && ZIP_INDEX[z]){
-      const rec = ZIP_INDEX[z];
-      map.setView([rec.lat, rec.lon], 11);
-      L.popup({maxWidth:290}).setLatLng([rec.lat,rec.lon]).setContent(zipPopupHtml(rec)).openOn(map);
+    if(z && gotoZip(z, false)){
+      /* gotoZip framed and opened it, served or not */
     } else if(st && STATIONS[st]){
       highlightStation(st);
     } else if(state.view==='routes'){
@@ -732,6 +956,7 @@
   window.addEventListener('hashchange', applyHash);
 
   // ---------- Init ----------
+  buildUnopenedLayer();
   refreshAll();
   if(location.hash) applyHash();
   animateCount(document.getElementById('stat-volume'),
